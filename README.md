@@ -6,6 +6,14 @@
 
 ## 使用
 
+可以用 [skills.sh 官方工具](https://skills.sh/docs/cli) 安装。在希望使用 Skill 的项目目录执行：
+
+```sh
+npx skills add zjyu1712-zjy/digital-textbook-html --skill digital-textbook-html --agent codex
+```
+
+此命令默认安装到当前项目；需要跨项目使用时添加 `--global`。已有同名技能时先保留旧副本。官方工具当前要求 Node.js 22.20 或更新版。安装后按下面第 3 步提供教材并调用；不使用此工具时也可以手动安装：
+
 1. 下载仓库，或克隆：
 
    ```sh
