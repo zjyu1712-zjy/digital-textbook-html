@@ -1,0 +1,12 @@
+{
+  "name": "digital-textbook-html",
+  "version": "1.0.1",
+  "contentSchemaVersion": 1,
+  "backupFormatVersion": 1,
+  "personalPreferencesVersion": 1,
+  "privateCourseMaterialsIncluded": false,
+  "changes": [
+    "Fix stale in-memory draft revision after successful save.",
+    "Add generic offline browser regression check for normal navigation and record persistence."
+  ]
+}
