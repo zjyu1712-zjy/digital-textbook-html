@@ -12,7 +12,11 @@
 
 ## 可运行测试
 
-- `python3 -m unittest discover -s tests -p 'test_*.py'`：结构反例、公式拒绝、嵌入、安全和增量影响。
+转换成品优先使用 `node /技能绝对路径/tests/runtime-check.cjs /工作区/教材.html /工作区/checks/runtime-report.json`，它读取本次教材真实 ID 与题型；`pass` 退出 0，`fail` 退出 1，缺能力等 `unverified` 退出 2。报告中的 `not_applicable` 不计为通过。真实截图仍需查看。Playwright 可放在工作区的 node_modules 或技能根目录，或使用 PLAYWRIGHT_MODULE 的绝对路径；浏览器用 BROWSER_EXECUTABLE 指定。
+
+以下固定样本脚本用于开发回归；从安装目录外调用时给脚本、输入和输出传绝对路径，并用 PLAYWRIGHT_MODULE 指定现有模块。工作文件不要放进只读安装目录。
+
+- `python3 -m unittest discover -s tests -p 'test_*.py'`：结构反例、公式拒绝、嵌入、安全、增量影响、跨目录/编码、环境失败和发布包隐私边界。
 - `node tests/browser.cjs <通用样本HTML> <报告路径>`：独立临时profile、file://断网、三次提交、附件、关闭重开、备份、故障注入。
 - `node tests/components.cjs <组件样本HTML> <报告路径>`：矩阵/公式/分录/表格/选择、不同教材与内容版本回溯（按实际脚本参数运行）。
 - `python3 tests/make_components.py work/components` 生成合成组件三版本；再对其中components.html运行组件测试。

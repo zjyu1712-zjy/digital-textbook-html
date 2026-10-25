@@ -12,9 +12,25 @@ const profile = path.join(scratch, 'profile');
 const report = {file, sha256:crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'),
   opening:'file://', profile:'isolated temporary profile, removed after test',
   status:'unverified', checks:[], screenshots:[], errors:[], remoteRequests:[],
-  visualReview:{status:'unverified', detail:'截图已提供；像素内容、图文对应与学术语义须由独立审查执行。'},
+  visualReview:{status:'unverified', detail:'本次未生成截图；视觉内容未验证。'},
+  runtime:{node:process.versions.node, minimumNodeMajor:20},
   scope:{chapters:[], questions:[], exercisedQuestions:[], fieldKinds:[], exams:[]}};
 let chromium, context, page, secondary;
+let reportWritten=false;
+function finishReport() {
+  if(reportWritten)return;
+  reportWritten=true;
+  report.visualReview.detail=report.screenshots.length
+    ? '已生成截图；像素内容、图文对应与学术语义仍须独立视觉核查。'
+    : '本次未生成截图；视觉内容未验证。';
+  if(report.status!=='pass'&&!process.exitCode)process.exitCode=report.status==='unverified'?2:1;
+  fs.writeFileSync(output,JSON.stringify(report,null,2));
+  fs.rmSync(scratch,{recursive:true,force:true});
+  console.log(JSON.stringify({status:report.status,checks:report.checks.length,detail:report.detail}));
+}
+// Some dependency loaders call process.exit instead of throwing. Keep the report
+// and a nonzero status even when the normal Promise finalizer cannot run.
+process.once('exit',finishReport);
 const options = {headless:true, viewport:{width:1440,height:980},
   ...(process.env.BROWSER_EXECUTABLE ? {executablePath:process.env.BROWSER_EXECUTABLE} : {})};
 const pass = (name, detail='') => report.checks.push({name,status:'pass',detail});
@@ -98,8 +114,19 @@ function variant(course,name) {
   const dest=path.join(scratch,name+'.html');fs.writeFileSync(dest,html);return dest;
 }
 async function main() {
-  try{({chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright'))}
+  // Browser checks support Node.js >=20; reject older runtimes before Playwright
+  // can terminate the process during require(). No dependency installation occurs.
+  if(Number(process.versions.node.split('.')[0])<20){
+    report.detail='真实浏览器检查需要 Node.js 20 或更新版；当前版本 '+process.versions.node+'，未加载 Playwright。';return;
+  }
+  report.detail='加载 Playwright 时进程提前终止，真实浏览器检查未执行。';
+  try{
+    const requested=process.env.PLAYWRIGHT_MODULE||'playwright';
+    const resolved=require.resolve(requested,{paths:[process.cwd(),path.resolve(__dirname,'..')]});
+    ({chromium}=require(resolved));
+  }
   catch{report.detail='未安装可运行的 Playwright，真实浏览器检查未执行。';return}
+  report.detail='浏览器检查尚未完成，不能宣称通过。';
   try{context=await chromium.launchPersistentContext(profile,options)}
   catch(e){report.detail='无法启动配置的 Chromium/Edge 浏览器：'+e.message.split('\n')[0];return}
   await instrument(context);page=await context.newPage();await open(page);
@@ -289,7 +316,5 @@ main().catch(e=>{report.status='fail';report.detail=e.message;report.failure=e.s
   report.checks.push({name:'runtime-failure',status:'fail',detail:e.message});process.exitCode=1;
 }).finally(async()=>{
   try{if(secondary)await secondary.close();if(context)await context.close()}catch{}
-  fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify(report,null,2));
-  fs.rmSync(scratch,{recursive:true,force:true});
-  console.log(JSON.stringify({status:report.status,checks:report.checks.length,detail:report.detail}));
+  finishReport();
 });

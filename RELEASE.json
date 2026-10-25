@@ -1,12 +1,15 @@
 {
   "name": "digital-textbook-html",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "contentSchemaVersion": 1,
   "backupFormatVersion": 1,
   "personalPreferencesVersion": 1,
   "privateCourseMaterialsIncluded": false,
   "changes": [
-    "Fix stale in-memory draft revision after successful save.",
-    "Add generic offline browser regression check for normal navigation and record persistence."
+    "Portable Agent Skills entrypoint and documented multi-agent installation.",
+    "Add non-networked runtime capability checks and allowlist-only distributable ZIP packaging.",
+    "Use explicit UTF-8 for CLI files and structured output across locales.",
+    "Return nonzero and retain honest evidence for unverified browser checks.",
+    "Preserve 1.0.1 draft fix, content schema, backup format and stable record identifiers."
   ]
 }

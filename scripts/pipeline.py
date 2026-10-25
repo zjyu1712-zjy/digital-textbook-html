@@ -8,8 +8,8 @@ DISCIPLINES={'math','theory','models','accounting','statistics','general'}
 FIELDS={'text','fill','number','choice','multiple','formula','matrix','journal','table'}
 BLOCKS={'paragraph','heading','list','math','matrix','table','image','details','diagram'}
 ORIGINS={'textbook_example','textbook_exercise','teacher_exercise','exam','auxiliary_exercise','ai_supplement'}
-def read(p):return json.loads(Path(p).read_text())
-def write(p,d):Path(p).parent.mkdir(parents=True,exist_ok=True);Path(p).write_text(json.dumps(d,ensure_ascii=False,indent=2))
+def read(p):return json.loads(Path(p).read_text(encoding="utf-8"))
+def write(p,d):Path(p).parent.mkdir(parents=True,exist_ok=True);Path(p).write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding="utf-8")
 def sha(p):
  h=hashlib.sha256()
  with Path(p).open('rb') as f:
@@ -149,7 +149,7 @@ def inspect_html(path):
     v=a.get(k,'')
     if v and not v.startswith(('data:','#')):self.errors.append('external resource '+v[:100])
    if any(k.startswith('on')for k in a):self.errors.append('inline event handler')
- p=Check();s=Path(path).read_text();p.feed(s)
+ p=Check();s=Path(path).read_text(encoding="utf-8");p.feed(s)
  for u in re.findall(r'url\(([^)]+)\)',s):
   if not u.strip('"\' ').startswith(('data:','#')):p.errors.append('external CSS URL '+u[:80])
  return p.errors
@@ -162,7 +162,7 @@ def build(data,inventory,dest,asset_root,allow_incomplete=False,node=None):
  if expressions:
   n=node or os.environ.get('NODE_BINARY')or shutil.which('node')
   if not n:raise ValueError('需Node验证公式；未完成公式核验，停止交付')
-  r=subprocess.run([n,str(SKILL/'scripts/check_math.cjs'),str(SKILL/'assets/vendor/katex.min.js')],input=json.dumps(expressions),text=True,capture_output=True)
+  r=subprocess.run([n,str(SKILL/'scripts/check_math.cjs'),str(SKILL/'assets/vendor/katex.min.js')],input=json.dumps(expressions),text=True,encoding="utf-8",capture_output=True)
   if r.returncode:raise ValueError('formula validation failed: '+r.stderr)
  root=Path(asset_root).resolve()
  for b in all_blocks(d):
@@ -172,17 +172,17 @@ def build(data,inventory,dest,asset_root,allow_incomplete=False,node=None):
    mime=mimetypes.guess_type(str(p))[0]
    if mime not in ('image/png','image/jpeg','image/webp','image/gif'):raise ValueError('image must be local raster; use structured diagram for SVG')
    b['data']='data:'+mime+';base64,'+base64.b64encode(p.read_bytes()).decode()
- css=(SKILL/'assets/vendor/katex.min.css').read_text()
+ css=(SKILL/'assets/vendor/katex.min.css').read_text(encoding="utf-8")
  def font(m):
   name=re.sub(r'\.(woff|ttf)$','.woff2',Path(m.group(1).strip('"\'')).name);p=SKILL/'assets/vendor'/name
   if not p.is_file():raise ValueError('missing font '+name)
   return 'url(data:font/woff2;base64,'+base64.b64encode(p.read_bytes()).decode()+')'
  css=re.sub(r'url\(([^)]+)\)',font,css);css=re.sub(r'format\("(?:woff|truetype)"\)','format("woff2")',css)
  payload=json.dumps(d,ensure_ascii=False,separators=(',',':')).replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
- values={'TITLE':html.escape(d['title']),'CSS':css+'\n'+(SKILL/'assets/style.css').read_text(),'DATA':payload,'JS':'\n'.join((SKILL/'assets'/f).read_text()for f in ['vendor/katex.min.js','storage.js','app.js'])}
- shell=(SKILL/'assets/shell.html').read_text()
+ values={'TITLE':html.escape(d['title']),'CSS':css+'\n'+(SKILL/'assets/style.css').read_text(encoding="utf-8"),'DATA':payload,'JS':'\n'.join((SKILL/'assets'/f).read_text(encoding="utf-8")for f in ['vendor/katex.min.js','storage.js','app.js'])}
+ shell=(SKILL/'assets/shell.html').read_text(encoding="utf-8")
  for k,v in values.items():shell=shell.replace('@@'+k+'@@',v)
- dest=Path(dest);dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(shell)
+ dest=Path(dest);dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(shell,encoding="utf-8")
  issues=inspect_html(dest)
  if issues:raise ValueError('packaging validation: '+str(issues))
  return d['validation']
@@ -195,6 +195,8 @@ def inventory_files(paths):
   rows.append({'path':str(p),'bytes':p.stat().st_size,'sha256':sha(p),'role':'unclassified','identity':'pending content inspection'})
  return rows
 def main():
+ for stream in (sys.stdout,sys.stderr):
+  if hasattr(stream,'reconfigure'):stream.reconfigure(encoding='utf-8')
  ap=argparse.ArgumentParser(description=__doc__);sp=ap.add_subparsers(dest='cmd',required=True)
  a=sp.add_parser('inventory');a.add_argument('files',nargs='+');a.add_argument('--out',required=True)
  a=sp.add_parser('classify');a.add_argument('input');a.add_argument('--out',required=True)
