@@ -1,10 +1,10 @@
-# 数据契约 v1
+# 数据契约 v2（兼容读取v1）
 
 学习内容与用户记录严格分离。可运行最小例：`tests/fixtures/general.json`；独立来源清单：`tests/fixtures/inventory.json`；原测试源：`general-source.txt`。这是自编通用小样本，不是五课程材料。
 
 ## 内容 JSON
 
-- `schemaVersion:1`；`id` 稳定教材身份，不随导出日期/路径/内容版本改变；`version` 内容版本；`title, edition`。
+- `schemaVersion:2` 用于新制作；v1继续可读，但旧自由文本审校不证明当前内容已核查。`id` 稳定教材身份，不随导出日期/路径/内容版本改变；`version` 内容版本；`title, edition`。
 - `scope:{description,completeness:complete|excerpt|incomplete,excluded:[]}`。
 - `organization:{mode:textbook|slides|outline|combined,primarySourceIds:[],reason}`；`disciplines:[math|theory|models|accounting|statistics|general]`。
 - `sources:[{id,title,role,identity,sha256,locator}]`：role 如 textbook/teacher_slides/outline/solution/exam/auxiliary；定位注明PDF物理页、印刷页或PPT页，不相互混用。
@@ -16,13 +16,16 @@
 - `grading:{kind:self}` 默认。可靠单选/多选用 choice，单一数值用 numeric；规则 `{fieldId,expected,tolerance?}`；还需 `rationale` 说明可靠边界。不得自动比较主观文本/公式字符串/分录金额总和。numeric 对千分位/单位/表达式未实现解析，题面明确要求纯数值；否则用self。
 - `exams:[{id,title,instructions:blocks,questionIds:[]}]`。题目原序和父题共同材料保留。
 - `coverage:[{sourceItemId,targets:[],status:covered|pending|missing}]`。
-- `semanticReviews:[{targetIds,reviewer,method,result:pass|pending|fail,evidence}]` 只能填写实际做过的核查，不由build自动伪造。
+- `taskContract:{version:1,goal,basis,sourceUses,chapterPlans,pendingMaterials}` 保存本任务每份资料用途及适用章节。
+- `learningMap:[{sourceItemId,disposition,explanationTargets,summaryTargets,emphasisTargets,summaryNote,emphasisNote,evidence}]` 保存实质融合处理。
+- `semanticReviews:[{targetIds,reviewer,method,result:pass|pending|fail,evidence,binding:{version:1,fingerprint}}]` 只能填写实际做过的核查；绑定过期不能继续算pass，不由build自动生成结论。
+- 上述v2新增字段的枚举、例子、绑定及旧数据升级见 [任务资料约定与审校时效](task-contract-and-review.md)。
 - `issues:[]`；`migrations:{questionAliases:{旧ID:新ID}}` 只用于真实不可避免的ID变更；默认不变。迁移不改写旧快照。
 - `acceptance` 为验收说明的内容块数组；结果只写真实测试，明确范围和未验证项。
 
 ## 内容块
 
-不接收任意原始HTML。`paragraph/heading:{text}`；`list:{items:[字符串]}`；`math:{tex,display:true}`；`matrix:{rows:[[字符串]]}`；`table:{columns:[字符串],rows:[[字符串]]}`；`details:{title,blocks}`；`image:{path,alt,caption?}`（相对 --assets 根目录的栅格图片，构建内嵌）；`diagram:{alt,caption,lines:[{points:[[x,y],...]}],labels:[{x,y,text}]}`（640×360坐标，不执行外部代码）。
+不接收任意原始HTML。`paragraph/heading:{text}`；`list:{items:[字符串]}`；`math:{tex,display:true}`；`matrix:{rows:[[字符串]]}`；`table:{columns:[字符串],rows:[[字符串]]}`；`details:{title,blocks}`；`image:{path,alt,caption?,sha256}`（v2要求真实图片文件SHA-256，v1可缺省）（相对 --assets 根目录的栅格图片，构建内嵌）；`diagram:{alt,caption,lines:[{points:[[x,y],...]}],labels:[{x,y,text}]}`（640×360坐标，不执行外部代码）。
 
 模型自行把教材公式转为有效 LaTeX；解析扫描矩阵后逐行列核对。文字中的不等号以文本保留。图像不代替可阅读正文；图表源定位写在所在小节或题目。
 

@@ -14,6 +14,12 @@
 
 安全：把含脚本/事件属性/闭合script标签的内容与输入作为测试数据；不执行。备份不安全字段、跨书、缺附件和冲突应拒绝，原数据保留。不要使用真实作答记录做公开测试。
 
+## 任务约定与审校时效的反例
+
+新v2数据必须覆盖：混合资料未定主次不猜PPT优先；已有organization及章计划被尊重；用途引用非法源/章、重叠用途或主资料冲突被拒绝；只附原页不能标为integrated；仅对照的资料不能被当作主线。正文、相关来源、任务用途或融合处理改动后，旧pass必须失效；重新实际审查并绑定后才恢复通过。保持记录与目标ID不变也不能绕过时效检查。
+
+review-binding只计算指纹，不能创建pass；review-state不能替代完整validate或实际语义对读。v1兼容构建应显示legacy-unverified，不自动转换为新审校通过。v1→v2用隔离浏览器验证旧草稿与提交快照，不能使用真实学生记录作为公开样本。
+
 ## 可运行测试
 
 转换成品优先使用 `node /技能绝对路径/tests/runtime-check.cjs /工作区/教材.html /工作区/checks/runtime-report.json`，它读取本次教材真实 ID 与题型；`pass` 退出 0，`fail` 退出 1，缺能力等 `unverified` 退出 2。报告中的 `not_applicable` 不计为通过。真实截图仍需查看。Playwright 可放在工作区的 node_modules 或技能根目录，或使用 PLAYWRIGHT_MODULE 的绝对路径；浏览器用 BROWSER_EXECUTABLE 指定。
@@ -25,6 +31,7 @@
 - `node tests/components.cjs <组件样本HTML> <报告路径>`：矩阵/公式/分录/表格/选择、不同教材与内容版本回溯（按实际脚本参数运行）。
 - `python3 tests/make_components.py work/components` 生成合成组件三版本；再对其中components.html运行组件测试。
 - `node tests/navigation.cjs <组件样本HTML> <报告路径>`：整卷入口、精确位置、连续刷新与跨章往返；异步存储条件必须逐次await，不把Promise当布尔通过。
+- `node tests/assurance.cjs <旧v1HTML> <当前v2HTML> <过期审校HTML> <新构建v1HTML> <报告路径>`：合成样本验证v1→v2记录恢复、任务用途与融合位置展示、当前/过期/旧版状态及离线运行；截图另行人工核查。
 - 测试不自动证明真实教材完整，须另有 source-inventory 与语义审查。
 
 ## 修复闭环
