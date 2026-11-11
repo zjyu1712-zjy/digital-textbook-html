@@ -36,13 +36,14 @@ npx skills add zjyu1712-zjy/digital-textbook-html --skill digital-textbook-html 
 
 ## 手动安装或上传技能包
 
-从 [GitHub Releases](https://github.com/zjyu1712-zjy/digital-textbook-html/releases) 下载 `digital-textbook-html-1.1.0.zip`。这是标准技能目录压缩包，不是任意平台通用的插件商店包；仅在目标产品明确支持这种格式时使用其上传功能。
+从 [GitHub Releases](https://github.com/zjyu1712-zjy/digital-textbook-html/releases) 下载 `digital-textbook-html-1.1.1.zip`。这是标准技能目录压缩包，不是任意平台通用的插件商店包；仅在目标产品明确支持这种格式时使用其上传功能。
 
 也可以克隆本仓库。手动安装时，保留整个 `digital-textbook-html/` 目录（含 scripts、references、assets 和 tests），放入对应技能目录；不要只上传 `SKILL.md`。已有同名技能或个人改动时先备份，再按目标平台的更新流程操作。各平台目录、Windows 示例与能力边界见 [跨平台说明](references/platform-compatibility.md)。
 
 ## 能力与质量
 
-- **资料组织：**教材主导、教师课件主导、提纲主导、组合资料。
+- **资料组织：**教材主导、教师课件主导、提纲主导、组合资料；主次和用途按使用者要求确定，不因提供PPT就默认课件主导。
+- **内容融合：**纳入学习的资料须实际融入知识点讲解、总结和重点呈现；后续补资料同步更新受影响内容，不能仅附上文件或原页。明确仅作存档或对照的资料按指定用途保留。
 - **学科策略：**数学与推导、理论与论述、模型与图形、会计业务与表格、数据与统计、通用教材，可组合使用。
 - **学习页面：**独立章节、搜索、知识点与题目跳转、原例题/原练习、真题整卷入口、隐藏答案及来源标记。
 - **作答与记录：**文字、填空、数值、选择、多选、公式、矩阵、分录、表格；图片附件、草稿自动保存、追加历次作答、完整备份导入导出。

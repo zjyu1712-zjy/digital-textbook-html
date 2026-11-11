@@ -1,15 +1,14 @@
 {
   "name": "digital-textbook-html",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "contentSchemaVersion": 1,
   "backupFormatVersion": 1,
-  "personalPreferencesVersion": 1,
+  "personalPreferencesVersion": 2,
   "privateCourseMaterialsIncluded": false,
   "changes": [
-    "Portable Agent Skills entrypoint and documented multi-agent installation.",
-    "Add non-networked runtime capability checks and allowlist-only distributable ZIP packaging.",
-    "Use explicit UTF-8 for CLI files and structured output across locales.",
-    "Return nonzero and retain honest evidence for unverified browser checks.",
-    "Preserve 1.0.1 draft fix, content schema, backup format and stable record identifiers."
+    "Determine source priorities and roles per user request; do not apply a course-specific slides-first preference globally.",
+    "Require substantive integration of learning materials into knowledge explanations, summaries and emphasis in all material modes, beyond attachments and page displays.",
+    "Review and update affected teaching content when materials are added; preserve source coverage, stable identifiers, and learning history.",
+    "Clarify layered chapter navigation and semantic acceptance; runtime, content schema and record formats remain unchanged."
   ]
 }
