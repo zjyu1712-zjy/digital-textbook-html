@@ -26,7 +26,7 @@ function finishReport() {
   if(report.status!=='pass'&&!process.exitCode)process.exitCode=report.status==='unverified'?2:1;
   fs.writeFileSync(output,JSON.stringify(report,null,2));
   fs.rmSync(scratch,{recursive:true,force:true});
-  console.log(JSON.stringify({status:report.status,checks:report.checks.length,detail:report.detail}));
+  console.log(JSON.stringify({status:report.status,checks:report.checks.length,checkSummary:report.checks.length?'检查范围与结果见报告':'未执行任何检查，不代表通过',detail:report.detail}));
 }
 // Some dependency loaders call process.exit instead of throwing. Keep the report
 // and a nonzero status even when the normal Promise finalizer cannot run.
@@ -291,23 +291,55 @@ async function main() {
     assert.deepEqual(old.map(a=>a.referenceAnswer),backup.tables.attempts.map(a=>a.referenceAnswer));
     pass('updated-book-history','仅在临时测试副本提升内容版本，旧题目与参考答案快照保持原样。');
     await open(page,file,'question/'+selected.id);await fillQuestion(page,selected,5);
+    const beforeReadonly=await page.evaluate(()=>DTH.db.exportBackup({id:DTH.course.id,version:DTH.course.version}));
     await page.evaluate(()=>{window.__originalTransaction=IDBDatabase.prototype.transaction;IDBDatabase.prototype.transaction=function(n,m,...r){if(m==='readwrite')throw new DOMException('quality quota injection','QuotaExceededError');return window.__originalTransaction.call(this,n,m,...r)}});
     // Dispatch a real field event for every input type, including choice-only books.
     await page.locator('[data-field]').first().dispatchEvent('input');
     await page.locator('#question-status').filter({hasText:'保存失败'}).waitFor();
     assert.doesNotMatch(await page.locator('#question-status').innerText(),/已保存/);
-    await page.getByRole('button',{name:'提交本次作答',exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:'提交本次作答',exact:true}).isDisabled(),true);
+    assert.equal(await page.evaluate(()=>!!DTH.db&&!DTH.db.writable),true);
+    await page.locator('#answer-form').evaluate(form=>form.requestSubmit());
     await page.locator('#question-status').filter({hasText:'提交失败'}).waitFor();
     assert.equal(await page.evaluate(async()=>(await DTH.db.list('attempts')).length),3);
-    await page.evaluate(()=>{IDBDatabase.prototype.transaction=window.__originalTransaction});
-    await page.locator('[data-field]').first().dispatchEvent('input');await settle(page);
-    pass('quota-save-submit-failure','在 IndexedDB 写事务边界注入空间不足；保存和提交均不误报成功，历史不增加。');
+    await go(page,'backup');assert.equal(await page.locator('#import-file').isDisabled(),true);
+    const readonlyDownload=page.waitForEvent('download');await page.locator('#export').click();
+    const readonlyFile=path.join(scratch,'readonly-backup.json');await(await readonlyDownload).saveAs(readonlyFile);
+    const readonlyBackup=JSON.parse(fs.readFileSync(readonlyFile,'utf8'));
+    assert.deepEqual(readonlyBackup.tables.attempts,beforeReadonly.tables.attempts);
+    assert.deepEqual(readonlyBackup.tables.attachments,beforeReadonly.tables.attachments);
+    assert.equal(await page.evaluate(async b=>{try{await DTH.db.importBackup(b);return false}catch(e){return e.name==='StorageReadOnlyError'}},readonlyBackup),true);
+    await page.evaluate(()=>{IDBDatabase.prototype.transaction=window.__originalTransaction});await page.reload();await ready(page);
+    assert.equal(await page.evaluate(()=>DTH.db.writable),true);
+    assert.equal(await page.evaluate(async()=>(await DTH.db.list('settings')).some(x=>x.id.startsWith('__storage_probe__:'))),false);
+    pass('quota-save-submit-failure','注入空间不足后暂停写入、不误报成功；已有历史及图片可完整导出，导入被拒绝，刷新重新探测后可恢复。');
   }else {skip('updated-book-history','无题目提交，不伪造旧作答历史。');skip('quota-save-submit-failure','无题目作答输入，保存失败反馈检查不适用。')}
+  const savedBeforeProbeFailure=await page.evaluate(()=>DTH.db.exportBackup({id:DTH.course.id,version:DTH.course.version}));
+  for(const failure of ['write','readback']){
+    const readonly=await context.newPage();
+    await readonly.addInitScript(mode=>{
+      if(mode==='write'){const original=IDBDatabase.prototype.transaction;IDBDatabase.prototype.transaction=function(names,mode,...rest){if(mode==='readwrite')throw new DOMException('startup quota injection','QuotaExceededError');return original.call(this,names,mode,...rest)}}
+      else{const original=IDBObjectStore.prototype.get;IDBObjectStore.prototype.get=function(key){if(typeof key==='string'&&key.startsWith('__storage_probe__:'))throw new DOMException('startup readback injection','UnknownError');return original.call(this,key)}}
+    },failure);
+    await open(readonly,file,'history');assert.equal(await readonly.evaluate(()=>!!DTH.db&&!DTH.db.writable),true);
+    assert.match(await readonly.locator('#storage-state').innerText(),/只读/);
+    assert.equal(await readonly.locator('.history-card').count(),savedBeforeProbeFailure.tables.attempts.length);
+    await go(readonly,'backup');assert.equal(await readonly.locator('#import-file').isDisabled(),true);
+    const started=readonly.waitForEvent('download');await readonly.locator('#export').click();
+    const recoveredFile=path.join(scratch,'startup-'+failure+'-backup.json');await(await started).saveAs(recoveredFile);
+    const recovered=JSON.parse(fs.readFileSync(recoveredFile,'utf8'));
+    assert.deepEqual(recovered.tables.attempts,savedBeforeProbeFailure.tables.attempts);
+    assert.deepEqual(recovered.tables.attachments,savedBeforeProbeFailure.tables.attachments);
+    assert.equal(recovered.tables.settings.some(x=>x.id.startsWith('__storage_probe__:')),false);
+    if(selected){await go(readonly,'question/'+selected.id);assert.equal(await readonly.locator('[data-field]').first().isDisabled(),true);await readonly.locator('#show-answer').click();assert.equal(await readonly.locator('.answer-content').count(),1)}
+    await readonly.close();
+  }
+  pass('startup-readonly-backup','启动写入/读回探测失败仍保留历史和图片导出，探测记录不残留；只读时解析仍可查看。');
   const unavailable=await context.newPage();await unavailable.addInitScript(()=>Object.defineProperty(window,'indexedDB',{value:undefined}));
   await open(unavailable,file,selected?'question/'+selected.id:'home');
   assert.match(await unavailable.locator('#storage-state').innerText(),/不可用.*未保存/);
-  if(selected){await unavailable.locator('[data-field]').first().dispatchEvent('input');await unavailable.locator('#question-status').filter({hasText:'保存失败'}).waitFor()}
-  pass('unavailable-storage','缺少 IndexedDB 时明确显示不可用；有题时输入不误报已保存。');
+  if(selected){assert.equal(await unavailable.locator('[data-field]').first().isDisabled(),true);assert.equal(await unavailable.getByRole('button',{name:'提交本次作答',exact:true}).isDisabled(),true);assert.doesNotMatch(await unavailable.locator('#question-status').innerText(),/已保存|已提交/)}
+  pass('unavailable-storage','缺少 IndexedDB 时明确显示不可用并暂停写入；不误报已保存或已提交。');
   assert.deepEqual(report.remoteRequests,[]);assert.deepEqual(report.errors,[]);
   pass('offline-no-errors','整个动态范围无 HTTP(S) 请求、无页面异常。');
   report.status='pass';report.detail='自动浏览器检查已通过；范围见 scope。截图内容和教材语义的独立审查不由本脚本宣称通过。';

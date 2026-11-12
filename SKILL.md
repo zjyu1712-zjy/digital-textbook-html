@@ -2,7 +2,7 @@
 name: digital-textbook-html
 description: "Use when converting textbooks or textbook/course-slide/outline/exercise-solution/exam combinations into offline interactive learning HTML, or upgrading and repairing such learning HTML. 适用于数字教材转换、学习HTML升级、自检修复；不用于只解一道题或修改普通网页。"
 metadata:
-  version: "1.2.0"
+  version: "1.2.1"
   runtime: "Python 3.9+; Node.js for formula checks; Node.js 20+, Playwright and Chromium for browser verification."
 ---
 

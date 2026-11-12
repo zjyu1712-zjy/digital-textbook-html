@@ -1,15 +1,16 @@
 {
   "name": "digital-textbook-html",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "contentSchemaVersion": 2,
   "backupFormatVersion": 1,
   "personalPreferencesVersion": 2,
   "privateCourseMaterialsIncluded": false,
   "changes": [
-    "Honor task-specific source priorities; return an unresolved classification for mixed materials without an established primary source.",
-    "Persist per-source purposes, chapter plans, emphasis and explicitly pending materials in taskContract.",
-    "Track substantive integration in learningMap and bind semantic reviews to target content, relevant evidence and task purposes; changed evidence requires review again.",
-    "Support legacy v1 inputs with explicit unbound-review status while preserving storage identity, question snapshots and backup format."
+    "Validate automatic grading rules and parse only declared numeric formats; malformed inputs do not become knowledge mistakes.",
+    "Preserve readable records and complete backup export when storage cannot write.",
+    "Probe workspace operations separately and detect Node/math independently.",
+    "Embed each WOFF2 font once without changing font bytes.",
+    "Provide an offline synthetic demo, clearer installation paths and a pinned, verified portal sync workflow."
   ],
   "supportedContentSchemaVersions": [
     1,

@@ -32,7 +32,11 @@ review-binding只计算指纹，不能创建pass；review-state不能替代完�
 - `python3 tests/make_components.py work/components` 生成合成组件三版本；再对其中components.html运行组件测试。
 - `node tests/navigation.cjs <组件样本HTML> <报告路径>`：整卷入口、精确位置、连续刷新与跨章往返；异步存储条件必须逐次await，不把Promise当布尔通过。
 - `node tests/assurance.cjs <旧v1HTML> <当前v2HTML> <过期审校HTML> <新构建v1HTML> <报告路径>`：合成样本验证v1→v2记录恢复、任务用途与融合位置展示、当前/过期/旧版状态及离线运行；截图另行人工核查。
+- `node tests/grading.cjs`：规则缺项、精度丢失、数值格式和十进制容差边界；`tests/grading-ui.cjs`验证真实页面中格式错误不产生误判提交，具体参数见脚本。
+- `node tests/demo.cjs <示例HTML> <输出目录>`：自编示例的实际作答、公式预览、20个字体离线加载、备份下载及宽窄屏截图。
 - 测试不自动证明真实教材完整，须另有 source-inventory 与语义审查。
+
+存储故障回归必须保留已有历史及图片：分别注入启动写失败、启动读回失败和运行中配额失败，核对只读时仍能导出完整已保存记录、未保存草稿另行导出，不能提交/导入或误报成功，刷新恢复后重新探测。不能只测“报错文字出现”。环境检测另查工作区失败不连带误报Node/公式失败；字体打包逐文件核对字节和字体族/字重/样式，并实际在断网浏览器加载。
 
 ## 修复闭环
 

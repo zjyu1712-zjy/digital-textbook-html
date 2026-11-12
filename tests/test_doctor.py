@@ -105,11 +105,130 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(self.check(report, "resources")["status"], "fail")
         self.assertIn("SKILL.md", self.check(report, "resources")["detail"])
 
-    def test_write_denied_prevents_readiness(self):
+    def test_missing_runtime_dependency_is_reported(self):
+        original = Path.is_file
+        for name in ("scripts/task_contract.py", "scripts/review_audit.py", "scripts/grading.py", "assets/grading.js"):
+            with self.subTest(module=name):
+                def exists(path):
+                    return False if path == ROOT / name else original(path)
+                with patch.object(Path, "is_file", exists):
+                    report = self.probe()
+                self.assertFalse(report["buildReady"])
+                self.assertIn(name, self.check(report, "resources")["detail"])
+                self.assertEqual(self.check(report, "math")["status"], "pass")
+
+    def test_temporary_subdirectory_restriction_does_not_hide_working_workspace(self):
         with patch.object(self.doctor.tempfile, "TemporaryDirectory", side_effect=PermissionError):
+            report = self.probe()
+        self.assertTrue(report["buildReady"])
+        self.assertEqual(self.check(report, "workspace")["status"], "pass")
+        self.assertEqual(self.check(report, "node")["status"], "pass")
+        self.assertEqual(self.check(report, "math")["status"], "pass")
+
+    def test_probe_file_creation_denied_does_not_skip_node_or_math(self):
+        with patch.object(self.doctor.tempfile, "mkstemp", side_effect=PermissionError("blocked")):
             report = self.probe()
         self.assertFalse(report["buildReady"])
         self.assertEqual(self.check(report, "workspace")["status"], "fail")
+        self.assertEqual(self.check(report, "node")["status"], "pass")
+        self.assertEqual(self.check(report, "math")["status"], "pass")
+        steps = self.check(report, "workspace")["steps"]
+        self.assertEqual(next(s for s in steps if s["id"] == "createFile")["status"], "fail")
+        self.assertIn("工作区", self.check(report, "workspace")["detail"])
+
+    def test_failed_workspace_directory_still_checks_node_in_safe_existing_directory(self):
+        self.workspace.write_text("not a directory", encoding="utf-8")
+        calls = []
+        def transport(command, **kwargs):
+            calls.append(kwargs["cwd"])
+            self.assertTrue(Path(kwargs["cwd"]).is_dir())
+            return self.transport(command, **kwargs)
+        report = self.probe(transport)
+        self.assertFalse(report["buildReady"])
+        self.assertEqual(self.check(report, "node")["status"], "pass")
+        self.assertEqual(self.check(report, "math")["status"], "pass")
+        self.assertTrue(calls)
+        self.assertEqual(self.workspace.read_text(encoding="utf-8"), "not a directory")
+
+    def test_probe_read_mismatch_is_reported_and_file_is_removed(self):
+        original = Path.read_text
+        def read(path, *args, **kwargs):
+            if path.parent == self.workspace.resolve() and path.name.startswith("dth-doctor-"):
+                return "changed"
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "read_text", read):
+            report = self.probe()
+        self.assertFalse(report["buildReady"])
+        steps = self.check(report, "workspace")["steps"]
+        self.assertEqual(next(s for s in steps if s["id"] == "read")["status"], "fail")
+        self.assertEqual(next(s for s in steps if s["id"] == "delete")["status"], "pass")
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_write_failure_still_closes_and_removes_exclusive_probe(self):
+        with patch.object(self.doctor.os, "fdopen", side_effect=PermissionError("write blocked")):
+            report = self.probe()
+        steps = self.check(report, "workspace")["steps"]
+        self.assertFalse(report["buildReady"])
+        self.assertEqual(next(s for s in steps if s["id"] == "write")["status"], "fail")
+        self.assertEqual(next(s for s in steps if s["id"] == "read")["status"], "unverified")
+        self.assertEqual(next(s for s in steps if s["id"] == "delete")["status"], "pass")
+        self.assertEqual(list(self.workspace.iterdir()), [])
+        self.assertEqual(self.check(report, "node")["status"], "pass")
+        self.assertEqual(self.check(report, "math")["status"], "pass")
+
+    def test_non_math_resource_failure_does_not_skip_actual_math_probe(self):
+        with patch.object(self.doctor, "missing_resources", return_value=["SKILL.md"]):
+            report = self.probe()
+        self.assertFalse(report["buildReady"])
+        self.assertEqual(self.check(report, "resources")["status"], "fail")
+        self.assertEqual(self.check(report, "math")["status"], "pass")
+
+    def test_cleanup_failure_names_leftover_file_without_hiding_node(self):
+        original = Path.unlink
+        def unlink(path, *args, **kwargs):
+            if path.parent == self.workspace.resolve() and path.name.startswith("dth-doctor-"):
+                raise PermissionError("cleanup denied")
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "unlink", unlink):
+            report = self.probe()
+        check = self.check(report, "workspace")
+        self.assertFalse(report["buildReady"])
+        self.assertEqual(check["status"], "fail")
+        self.assertEqual(next(s for s in check["steps"] if s["id"] == "delete")["status"], "fail")
+        self.assertEqual(self.check(report, "node")["status"], "pass")
+        leftover = Path(check["leftoverProbe"])
+        self.assertEqual(leftover.parent, self.workspace.resolve())
+        self.assertTrue(leftover.is_file())
+        self.assertIn(str(leftover), check["detail"])
+        leftover.unlink()
+
+    def test_missing_math_dependency_is_unverified_not_a_failed_execution(self):
+        with patch.object(self.doctor.shutil, "which", return_value=None):
+            report = self.doctor.run_doctor(self.workspace, node="absent-node")
+        self.assertEqual(self.check(report, "math")["status"], "unverified")
+        self.assertIn("未执行", self.check(report, "math")["detail"])
+
+    def test_existing_user_files_are_never_overwritten_or_deleted(self):
+        self.workspace.mkdir()
+        original = self.workspace / "dth-doctor-user-file.txt"
+        original.write_text("keep", encoding="utf-8")
+        report = self.probe()
+        self.assertTrue(report["buildReady"])
+        self.assertEqual(original.read_text(encoding="utf-8"), "keep")
+        self.assertEqual(list(self.workspace.iterdir()), [original])
+
+    def test_older_node_is_reported_without_a_false_minimum_for_formula_probe(self):
+        def transport(command, **kwargs):
+            if command[-1] == "--version":
+                return subprocess.CompletedProcess(command, 0, "v18.20.0\n", "")
+            if "-e" in command:
+                return subprocess.CompletedProcess(command, 1, "", "Playwright requires Node 20+")
+            return self.transport(command, **kwargs)
+        report = self.probe(transport)
+        self.assertTrue(report["buildReady"])
+        self.assertEqual(self.check(report, "node")["detail"], "v18.20.0")
+        self.assertEqual(self.check(report, "math")["status"], "pass")
+        self.assertEqual(self.check(report, "playwright")["status"], "unverified")
 
     def test_workspace_and_report_inside_installation_are_rejected_before_writes(self):
         for workspace, out in ((ROOT, None), (ROOT / "do-not-create", None),

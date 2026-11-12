@@ -13,6 +13,8 @@ import tempfile
 SKILL = Path(__file__).resolve().parents[1]
 REQUIRED_FILES = (
     "SKILL.md", "scripts/pipeline.py", "scripts/check_math.cjs",
+    "scripts/task_contract.py", "scripts/review_audit.py",
+    "scripts/grading.py", "assets/grading.js",
     "assets/shell.html", "assets/style.css", "assets/storage.js", "assets/app.js",
     "assets/vendor/katex.min.js", "assets/vendor/katex.min.css",
     "references/schema.md", "references/quality.md", "references/preferences.md",
@@ -57,6 +59,60 @@ def missing_resources(skill):
     return sorted(set(missing))
 
 
+def probe_workspace(workspace):
+    """Probe the requested directory itself, without creating a child directory.
+
+    Exclusive creation protects existing files. Every attempted stage is recorded;
+    cleanup failures preserve the exact leftover name instead of hiding the error.
+    """
+    labels = {"createDirectory": "创建或确认工作区", "createFile": "创建唯一探测文件",
+              "write": "写入", "read": "读回", "delete": "删除探测文件"}
+    steps = [{"id": name, "status": "unverified", "detail": "未执行"} for name in labels]
+    by_id = {step["id"]: step for step in steps}
+    probe, descriptor = None, None
+    stage = "createDirectory"
+    try:
+        workspace.mkdir(parents=True, exist_ok=True)
+        by_id[stage].update(status="pass", detail="工作区目录已存在或已创建。")
+        stage = "createFile"
+        descriptor, name = tempfile.mkstemp(prefix="dth-doctor-", suffix=".tmp", dir=workspace)
+        probe = Path(name)
+        by_id[stage].update(status="pass", detail="在工作区直接创建了不覆盖现有文件的探测文件。")
+        stage = "write"
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = None  # The context manager owns and closes the descriptor.
+            stream.write("数字教材：本地写读检查")
+        by_id[stage].update(status="pass", detail="UTF-8 内容已写入并关闭文件。")
+        stage = "read"
+        if probe.read_text(encoding="utf-8") != "数字教材：本地写读检查":
+            raise OSError("读回内容与写入内容不一致")
+        by_id[stage].update(status="pass", detail="实际读回的内容与写入内容一致。")
+    except (OSError, UnicodeError) as exc:
+        by_id[stage].update(status="fail", detail=labels[stage] + "失败：" + str(exc))
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError as exc:
+                by_id["delete"].update(status="fail", detail="关闭探测文件失败：" + str(exc))
+        if probe is not None:
+            try:
+                probe.unlink()
+                if by_id["delete"]["status"] != "fail":
+                    by_id["delete"].update(status="pass", detail="已删除本次探测文件。")
+            except OSError as exc:
+                by_id["delete"].update(status="fail", detail="删除探测文件失败：" + str(exc))
+    passed = all(step["status"] == "pass" for step in steps)
+    detail = "已在指定工作区实际创建、写入、读回并删除唯一探测文件。" if passed else (
+        "；".join(step["detail"] for step in steps if step["status"] == "fail")
+        + "。请检查目录权限或选择可写的非受控工作区；未修改目录权限。")
+    result = {"status": "pass" if passed else "fail", "detail": detail, "steps": steps}
+    if probe is not None and by_id["delete"]["status"] == "fail":
+        result["leftoverProbe"] = str(probe)
+        result["detail"] += " 如该探测文件仍存在，请自行清理：" + str(probe)
+    return result
+
+
 def run_doctor(workspace, node=None, out=None, skill=SKILL):
     """Return JSON-compatible evidence. Only requested workspace/output may be written."""
     skill = Path(skill).expanduser().resolve()
@@ -68,9 +124,9 @@ def run_doctor(workspace, node=None, out=None, skill=SKILL):
         "buildReady": False, "fullConversionVerified": False, "checks": [],
     }
 
-    def add(name, status, detail, required=False):
+    def add(name, status, detail, required=False, **evidence):
         report["checks"].append({"id": name, "status": status,
-                                 "requiredForBuild": required, "detail": detail})
+                                 "requiredForBuild": required, "detail": detail, **evidence})
 
     for name, detail in MANUAL_CHECKS:
         add(name, "unverified", detail)
@@ -87,29 +143,22 @@ def run_doctor(workspace, node=None, out=None, skill=SKILL):
     add("resources", "fail" if missing else "pass",
         "缺少或不可读取的资源：" + ", ".join(missing) if missing else
         "构建脚本、学习组件、必需引用和 CSS 对应字体均存在。", True)
-    workspace_ok = False
-    try:
-        workspace.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="dth-doctor-", dir=workspace) as temporary:
-            probe = Path(temporary) / "probe.txt"
-            probe.write_text("数字教材：本地写读检查", encoding="utf-8")
-            if probe.read_text(encoding="utf-8") != "数字教材：本地写读检查":
-                raise OSError("Probe read mismatch")
-        workspace_ok = True
-        add("workspace", "pass", "已在指定工作区实际写入、读回并清理临时文件。", True)
-    except OSError:
-        add("workspace", "fail", "指定工作区不可创建、写入、读回或清理探测文件。", True)
+    workspace_result = probe_workspace(workspace)
+    workspace_ok = workspace_result["status"] == "pass"
+    add("workspace", required=True, **workspace_result)
+    # These commands only read installed resources. Their execution directory does
+    # not depend on the workspace being writable (or even being a valid directory).
+    probe_cwd = skill if skill.is_dir() else Path(__file__).resolve().parent
 
     chosen_node = node or os.environ.get("NODE_BINARY") or "node"
     executable = shutil.which(chosen_node)
     node_ok = False
     if not executable:
         add("node", "fail", "未找到指定的 Node；没有回退到其他配置或自动安装。", True)
-    elif not workspace_ok:
-        add("node", "fail", "工作区不可写，未启动 Node 探测。", True)
     else:
+        executable = str(Path(executable).resolve())
         try:
-            result = _run([executable, "--version"], workspace)
+            result = _run([executable, "--version"], probe_cwd)
             version = result.stdout.strip()
             node_ok = result.returncode == 0 and bool(re.fullmatch(r"v\d+\.\d+\.\d+(?:[-+].*)?", version))
             add("node", "pass" if node_ok else "fail",
@@ -117,13 +166,15 @@ def run_doctor(workspace, node=None, out=None, skill=SKILL):
         except (OSError, subprocess.TimeoutExpired):
             add("node", "fail", "无法启动 Node 或版本探测超时。", True)
 
-    if not node_ok or missing:
-        add("math", "fail", "缺少可运行的 Node 或技能资源，未执行公式检查。", True)
+    math_missing = [name for name in ("scripts/check_math.cjs", "assets/vendor/katex.min.js")
+                    if name in missing]
+    if not node_ok or math_missing:
+        add("math", "unverified", "缺少可运行的 Node 或公式资源，未执行公式检查；不代表公式检查失败。", True)
     else:
         try:
             expressions = [r"\frac{1}{2}", r"\begin{pmatrix}1&2\\3&4\end{pmatrix}"]
             result = _run([executable, str(skill / "scripts/check_math.cjs"),
-                           str(skill / "assets/vendor/katex.min.js")], workspace,
+                           str(skill / "assets/vendor/katex.min.js")], probe_cwd,
                           json.dumps(expressions))
             passed = result.returncode == 0 and json.loads(result.stdout).get("checked") == len(expressions)
             add("math", "pass" if passed else "fail",
@@ -134,14 +185,14 @@ def run_doctor(workspace, node=None, out=None, skill=SKILL):
 
     browser_path = None
     if node_ok:
-        # Resolve from the caller's workspace first, then the installation; never install.
-        script = """const requested=process.argv[1],skill=process.argv[2];
-const resolved=require.resolve(requested,{paths:[process.cwd(),skill]});
+        # Resolve from the requested workspace first, then the installation; never install.
+        script = """const requested=process.argv[1],skill=process.argv[2],workspace=process.argv[3];
+const resolved=require.resolve(requested,{paths:[workspace,skill]});
 const pw=require(resolved);
 console.log(JSON.stringify({modulePath:resolved,browserPath:pw.chromium.executablePath()}));"""
         try:
             result = _run([executable, "-e", script,
-                           os.environ.get("PLAYWRIGHT_MODULE") or "playwright", str(skill)], workspace)
+                           os.environ.get("PLAYWRIGHT_MODULE") or "playwright", str(skill), str(workspace)], probe_cwd)
             if result.returncode != 0:
                 raise ValueError("module probe exited " + str(result.returncode))
             payload = json.loads(result.stdout)

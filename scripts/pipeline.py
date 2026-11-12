@@ -4,6 +4,7 @@ import argparse,base64,copy,hashlib,html,json,mimetypes,os,re,shutil,subprocess,
 from html.parser import HTMLParser
 from task_contract import classify,validate_contract
 from review_audit import validate_learning_map,review_fingerprint,audit_reviews
+from grading import validate_grading
 SKILL=Path(__file__).resolve().parents[1]
 MODES={'textbook','slides','outline','combined'}
 DISCIPLINES={'math','theory','models','accounting','statistics','general'}
@@ -83,12 +84,7 @@ def validate(d,inv):
   if a.get('status')not in ('ready','pending','missing'):e.append('answer status required')
   if a.get('status')=='ready'and not substantive(a.get('blocks',[])):e.append('ready answer lacks solution')
   refs(a.get('sourceRefs',[]),'answer '+str(q.get('id')),a.get('provenance')in ('original','teacher'))
-  g=q.get('grading',{'kind':'self'})
-  if g.get('kind')not in ('self','choice','numeric'):e.append('unsupported grading; use self assessment')
-  if g.get('kind')!='self':
-   if a.get('status')!='ready'or not g.get('rules')or not g.get('rationale'):e.append('automatic judgment needs reliable rules')
-   for r in g.get('rules',[]):
-    if r.get('fieldId')not in fs:e.append('grading field missing')
+  e.extend(validate_grading(q))
  for b in all_blocks(d):
   t=b.get('type')
   if t not in BLOCKS:e.append('unsupported block '+str(t))
@@ -151,6 +147,19 @@ def inspect_html(path):
  for u in re.findall(r'url\(([^)]+)\)',s):
   if not u.strip('"\' ').startswith(('data:','#')):p.errors.append('external CSS URL '+u[:80])
  return p.errors
+def embedded_math_css():
+ css=(SKILL/'assets/vendor/katex.min.css').read_text(encoding='utf-8')
+ def font_sources(match):
+  # All supported browsers read WOFF2; keep one bundled source per face.
+  urls=re.findall(r'url\(([^)]+)\)',match.group(1))
+  names=[Path(url.strip('"\' ')).name for url in urls]
+  names=[name for name in names if name.endswith('.woff2')]
+  if len(names)!=1:raise ValueError('font face requires exactly one bundled WOFF2 source')
+  p=SKILL/'assets/vendor'/names[0]
+  if not p.is_file():raise ValueError('missing font '+names[0])
+  encoded=base64.b64encode(p.read_bytes()).decode()
+  return 'src:url(data:font/woff2;base64,'+encoded+') format("woff2")'
+ return re.sub(r'src:([^;}]+)',font_sources,css)
 def build(data,inventory,dest,asset_root,allow_incomplete=False,node=None):
  d=copy.deepcopy(data);errors=validate(d,inventory)
  if errors and not allow_incomplete:raise ValueError('\n'.join(errors))
@@ -171,14 +180,9 @@ def build(data,inventory,dest,asset_root,allow_incomplete=False,node=None):
    if mime not in ('image/png','image/jpeg','image/webp','image/gif'):raise ValueError('image must be local raster; use structured diagram for SVG')
    if d.get('schemaVersion')==2 and sha(p)!=b.get('sha256'):raise ValueError('image content changed: update image sha256 and re-review '+str(b['path']))
    b['data']='data:'+mime+';base64,'+base64.b64encode(p.read_bytes()).decode()
- css=(SKILL/'assets/vendor/katex.min.css').read_text(encoding="utf-8")
- def font(m):
-  name=re.sub(r'\.(woff|ttf)$','.woff2',Path(m.group(1).strip('"\'')).name);p=SKILL/'assets/vendor'/name
-  if not p.is_file():raise ValueError('missing font '+name)
-  return 'url(data:font/woff2;base64,'+base64.b64encode(p.read_bytes()).decode()+')'
- css=re.sub(r'url\(([^)]+)\)',font,css);css=re.sub(r'format\("(?:woff|truetype)"\)','format("woff2")',css)
+ css=embedded_math_css()
  payload=json.dumps(d,ensure_ascii=False,separators=(',',':')).replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
- values={'TITLE':html.escape(d['title']),'CSS':css+'\n'+(SKILL/'assets/style.css').read_text(encoding="utf-8"),'DATA':payload,'JS':'\n'.join((SKILL/'assets'/f).read_text(encoding="utf-8")for f in ['vendor/katex.min.js','storage.js','app.js'])}
+ values={'TITLE':html.escape(d['title']),'CSS':css+'\n'+(SKILL/'assets/style.css').read_text(encoding="utf-8"),'DATA':payload,'JS':'\n'.join((SKILL/'assets'/f).read_text(encoding="utf-8")for f in ['vendor/katex.min.js','storage.js','grading.js','app.js'])}
  shell=(SKILL/'assets/shell.html').read_text(encoding="utf-8")
  for k,v in values.items():shell=shell.replace('@@'+k+'@@',v)
  dest=Path(dest);dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(shell,encoding="utf-8")
